@@ -1,0 +1,24 @@
+{
+  "name": "canonical-uml-xmi-parser",
+  "version": "0.1.0",
+  "description": "Canonical XMI parser for uml-model package",
+  "main": "canonical-uml-xmi-parser.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "keywords": [
+    "UML",
+    "ShEx",
+    "XMI"
+  ],
+  "author": "Eric Prud'hommeaux <eric.npm@w3.org> (http://www.w3.org/People/Eric/)",
+  "license": "MIT",
+  "dependencies": {
+    "hierarchy-closure": "^1.0.1",
+    "uml-model": "^0.1.0",
+    "xml2js": "0.4.17"
+  },
+  "devDependencies": {
+    "jest": "^23.3.0"
+  }
+}
