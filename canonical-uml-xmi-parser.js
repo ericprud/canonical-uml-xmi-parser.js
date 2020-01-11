@@ -6,7 +6,7 @@ let CanonicalUmlXmiParser = function (opts = {}) {
   let NormalizeType = opts.normalizeType || (type => type)
   let ViewPattern = opts.viewPattern || null
   let NameMap = opts.nameMap || { }
-  const UmlModel = opts.umlModel || require('./uml-model')()
+  const UmlModel = opts.umlModel || require('uml-model')()
   var UPPER_UNLIMITED = '*'
 
   function parseName (elt) {
