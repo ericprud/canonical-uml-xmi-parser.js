@@ -3,7 +3,11 @@
 
 let CanonicalUmlXmiParser = function (opts = {}) {
 
-  let NormalizeType = opts.normalizeType || (type => type)
+  const returnParm1 = x => x
+  const NormalizeDatatype = opts.normalizeDatatype || returnParm1
+  const NormalizeAssociation = opts.normalizeAssociation || returnParm1
+  const NormalizeProperty = opts.normalizeProperty || returnParm1
+
   let ViewPattern = opts.viewPattern || null
   let NameMap = opts.nameMap || { }
   const UmlModel = opts.umlModel || require('uml-model')()
@@ -14,7 +18,15 @@ let CanonicalUmlXmiParser = function (opts = {}) {
     return !ret ? ret : ret in NameMap ? NameMap[ret] : expandPrefix(ret)
   }
 
-  function parseValue (elt, deflt) { // 'default' is a reserved word
+  function parseValue (property, attrName, deflt, id) { // 'default' is a reserved word
+    if (!(attrName in property)) {
+      if (opts.expectCardinalities) {
+        return opts.expectCardinalities(id, attrName, deflt)
+      } else {
+        return deflt
+      }
+    }
+    const elt = property[attrName][0]
     return 'value' in elt.$ ? elt.$.value : 'value' in elt ? elt.value[0] : deflt
   }
 
@@ -43,16 +55,22 @@ let CanonicalUmlXmiParser = function (opts = {}) {
       comments: []
     }
     elts.forEach(elt => {
-      let umlType = elt.$['xmi:type']
-      console.assert(umlType === 'uml:Property')
+      console.assert(elt.$['xmi:type'] === 'uml:Property')
       let id = elt.$['xmi:id']
       let name = parseName(elt)
       let association = parseAssociation(elt)
+      const min = parseValue(elt, 'lowerValue', 0, id)
+      const max = parseValue(elt, 'upperValue', UPPER_UNLIMITED, id)
+
+      if (association)
+        association = NormalizeAssociation(association, id, classId)
+      else
+        name = NormalizeProperty(name, id, classId)
+
       let newPropertyRec = new PropertyRecord(
         model, classId, id, name, elt.type[0].$['xmi:idref'],
-        NormalizeType( elt.type[0].$['href']),
-        parseValue(elt.lowerValue[0], 0),
-        parseValue(elt.upperValue[0], UPPER_UNLIMITED),
+        NormalizeDatatype(elt.type[0].$['href'], id, classId),
+        min, max,
         parseComments(elt))
       ret.properties.push(newPropertyRec)
 
@@ -66,8 +84,8 @@ let CanonicalUmlXmiParser = function (opts = {}) {
           propertyRecord: newPropertyRec,
           classId: classId,
           type: elt.type[0].$['xmi:idref'],
-          lower: parseValue(elt.lowerValue[0], 0),
-          upper: parseValue(elt.upperValue[0], UPPER_UNLIMITED),
+          lower: min,
+          upper: max,
           comments: parseComments(elt)
         })
         if ('aggregation' in elt) {
@@ -81,8 +99,6 @@ let CanonicalUmlXmiParser = function (opts = {}) {
       } else if (!name) {
         // e.g. canonical *-owned-attribute-n properties.
         // throw Error('expected name in ' + JSON.stringify(elt.$) + ' in ' + parent)
-      } else if (opts.checkPropertyNameCase && name.charAt(0).match(/[A-Z]/)) {
-        console.warn('unexpected initial capital in property name ' + name + ' in class ' + classId)
       }
     })
     return ret
