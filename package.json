@@ -1,6 +1,6 @@
 {
   "name": "canonical-uml-xmi-parser",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Canonical XMI parser for uml-model package",
   "main": "canonical-uml-xmi-parser.js",
   "scripts": {
