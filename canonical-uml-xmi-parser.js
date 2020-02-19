@@ -241,143 +241,142 @@ let CanonicalUmlXmiParser = function (opts = {}) {
       if (!('xmi:id' in elt.$)) {
         throw Error('no id in ' + eltToString(elt))
       }
-      {
-        let id = elt.$['xmi:id']
-        if (id in byId) {
-          throw Error(`duplicate defintion of xml:id in ${eltToString(elt)}; previous: ${eltToString(byId[id])}`)
-        }
-        byId[id] = elt
-        let name = parseName(elt)
-        // Could keep id to elt map around with this:
-        // index[id] = { element: elt, packages: parents }
+      let id = elt.$['xmi:id']
+      if (id in byId) {
+        throw Error(`duplicate defintion of xml:id in ${eltToString(elt)}; previous: ${eltToString(byId[id])}`)
+      }
+      byId[id] = elt
 
-        switch (type) {
-          case 'uml:Class':
-            let ownedAttrs = parseProperties(
-              model, elt.ownedAttribute || [], // SentinelConceptualDomain has no props
-              id)
+      let name = parseName(elt)
+      // Could keep id to elt map around with this:
+      // index[id] = { element: elt, packages: parents }
 
-            classes[id] = Object.assign(
-              new ClassRecord(id, name),
-              ownedAttrs, {
-                packages: parents,
-                superClasses: [],
-                isAbstract: parseIsAbstract(elt),
-                referees: [],
-                comments: parseComments(elt)
-              }
-            )
-            packages[parent].elements.push({type: 'class', id: id})
-            Object.keys(ownedAttrs.associations).forEach(
-              assocSourceId => { assocSrcToClass[assocSourceId] = id }
-            )
+      switch (type) {
+        case 'uml:Class':
+          let ownedAttrs = parseProperties(
+            model, elt.ownedAttribute || [], // SentinelConceptualDomain has no props
+            id)
 
-            // record class hierarchy (allows multiple inheritance)
-            if ('generalization' in elt) {
-              elt.generalization.forEach(
-                superClassElt => {
-                  let superClassId = parseGeneral(superClassElt)
-                  classHierarchy.add(superClassId, id)
-                  classes[id].superClasses.push(superClassId)
-                })
-            }
-            break
-          case 'uml:Enumeration':
-            enums[id] = Object.assign(new EnumRecord(), {
-              id: id,
-              name: name,
-              values: elt.ownedLiteral.map(
-                l => parseName(l)
-              ),
+          classes[id] = Object.assign(
+            new ClassRecord(id, name),
+            ownedAttrs, {
               packages: parents,
-              referees: []
-            })
-            packages[parent].elements.push({type: 'enumeration', id: id})
-            // record class hierarchy
-            if ('generalization' in elt) {
-              throw Error("need to handle inherited enumeration " + parseGeneral(elt.generalization[0]) + " " + name)
-            }
-            break
-          case 'uml:DataType':
-          case 'uml:PrimitiveType':
-            datatypes[id] = Object.assign(new DatatypeRecord(), {
-              name: name,
-              id: id,
-              packages: parents,
-              referees: []
-            })
-            packages[parent].elements.push({type: 'datatype', id: id})
-            // record class hierarchy
-            if ('generalization' in elt) {
-              throw Error("need to handle inherited datatype " + parseGeneral(elt.generalization[0]) + " " + name)
-            }
-            break
-          case 'uml:Model':
-          case 'uml:Package':
-          let recurse = true
-            if (ViewPattern && id.match(ViewPattern)) {
-              model.views = parseCanonicalViews(elt)
-              recurse = false // elide canonical views package in package hierarcy
-            } else {
-              packages[id] = Object.assign(new PackageRecord(), {
-                name: name,
-                id: id,
-                packages: parents,
-                elements: [],
-                comments: (elt.ownedComment || []).map(
-                  cmnt => cmnt.body[0]
-                )
-              })
-              if (parents.length) {
-                if (id.match(/Pattern999/)) { // !! DDI-specific
-                  recurse = false // don't record Pattern packages.
-                } else {
-                  packageHierarchy.add(parent, id)
-                  packages[parent].elements.push({type: 'package', id: id})
-                }
-              }
-              if (recurse) {
-                if ('elementImport' in elt) {
-                  elt.elementImport.forEach(sub => {
-                    // visitPackage(sub, [id].concat(parents))
-                    let importId = sub.$['xmi:id']
-                    let ref = sub.importedElement[0].$['xmi:idref']
-                    imports[importId] = new ImportedElementRecord(importId, ref)
-                    packages[id].elements.push({type: 'import', id: importId})
-                  })
-                }
-                if ('packagedElement' in elt) {
-                  // walk desendents
-                  elt.packagedElement.forEach(sub => {
-                    visitPackage(sub, [id].concat(parents))
-                  })
-                }
-              }
-            }
-            break
-            // Pass through to get to nested goodies.
-          case 'uml:Association':
-            let from = elt.memberEnd.map(end => end.$['xmi:idref']).filter(id => id !== elt.ownedEnd[0].$['xmi:id'])[0]
-            associations[id] = Object.assign(new AssociationRecord(id, name), {
-              from: from,
+              superClasses: [],
+              isAbstract: parseIsAbstract(elt),
+              referees: [],
               comments: parseComments(elt)
-              // type: elt.ownedEnd[0].type[0].$['xmi:idref']
+            }
+          )
+          packages[parent].elements.push({type: 'class', id: id})
+          Object.keys(ownedAttrs.associations).forEach(
+            assocSourceId => { assocSrcToClass[assocSourceId] = id }
+          )
+
+          // record class hierarchy (allows multiple inheritance)
+          if ('generalization' in elt) {
+            elt.generalization.forEach(
+              superClassElt => {
+                let superClassId = parseGeneral(superClassElt)
+                classHierarchy.add(superClassId, id)
+                classes[id].superClasses.push(superClassId)
+              })
+          }
+          break
+        case 'uml:Enumeration':
+          enums[id] = Object.assign(new EnumRecord(), {
+            id: id,
+            name: name,
+            values: elt.ownedLiteral.map(
+              l => parseName(l)
+            ),
+            packages: parents,
+            referees: []
+          })
+          packages[parent].elements.push({type: 'enumeration', id: id})
+          // record class hierarchy
+          if ('generalization' in elt) {
+            throw Error("need to handle inherited enumeration " + parseGeneral(elt.generalization[0]) + " " + name)
+          }
+          break
+        case 'uml:DataType':
+        case 'uml:PrimitiveType':
+          datatypes[id] = Object.assign(new DatatypeRecord(), {
+            name: name,
+            id: id,
+            packages: parents,
+            referees: []
+          })
+          packages[parent].elements.push({type: 'datatype', id: id})
+          // record class hierarchy
+          if ('generalization' in elt) {
+            throw Error("need to handle inherited datatype " + parseGeneral(elt.generalization[0]) + " " + name)
+          }
+          break
+        case 'uml:Model':
+        case 'uml:Package':
+        let recurse = true
+          if (ViewPattern && id.match(ViewPattern)) {
+            model.views = parseCanonicalViews(elt)
+            recurse = false // elide canonical views package in package hierarcy
+          } else {
+            packages[id] = Object.assign(new PackageRecord(), {
+              name: name,
+              id: id,
+              packages: parents,
+              elements: [],
+              comments: (elt.ownedComment || []).map(
+                cmnt => cmnt.body[0]
+              )
             })
-            /* <packagedElement xmi:id="AgentIndicator-member-association" xmi:type="uml:Association">
-                 <name>member</name>
-                 <memberEnd xmi:idref="AgentIndicator-member-source"/>
-                 <memberEnd xmi:idref="AgentIndicator-member-target"/>
-                 <ownedEnd xmi:id="AgentIndicator-member-target" xmi:type="uml:Property">
-                   <association xmi:idref="AgentIndicator-member-association"/>
-                   <type xmi:idref="AgentIndicator"/>
-                   <lower><value>1</value></lowerValue>
-                   <upper><value>1</value></uppervalue>
-                 </ownedEnd>
-               </packagedElement> */
-            break
-          default:
-            console.warn('need handler for ' + type)
-        }
+            if (parents.length) {
+              if (id.match(/Pattern999/)) { // !! DDI-specific
+                recurse = false // don't record Pattern packages.
+              } else {
+                packageHierarchy.add(parent, id)
+                packages[parent].elements.push({type: 'package', id: id})
+              }
+            }
+            if (recurse) {
+              if ('elementImport' in elt) {
+                elt.elementImport.forEach(sub => {
+                  // visitPackage(sub, [id].concat(parents))
+                  let importId = sub.$['xmi:id']
+                  let ref = sub.importedElement[0].$['xmi:idref']
+                  imports[importId] = new ImportedElementRecord(importId, ref)
+                  packages[id].elements.push({type: 'import', id: importId})
+                })
+              }
+              if ('packagedElement' in elt) {
+                // walk desendents
+                elt.packagedElement.forEach(sub => {
+                  visitPackage(sub, [id].concat(parents))
+                })
+              }
+            }
+          }
+          break
+          // Pass through to get to nested goodies.
+        case 'uml:Association':
+          let from = elt.memberEnd.map(end => end.$['xmi:idref']).filter(id => id !== elt.ownedEnd[0].$['xmi:id'])[0]
+          associations[id] = Object.assign(new AssociationRecord(id, name), {
+            from: from,
+            comments: parseComments(elt)
+            // type: elt.ownedEnd[0].type[0].$['xmi:idref']
+          })
+          /* <packagedElement xmi:id="AgentIndicator-member-association" xmi:type="uml:Association">
+               <name>member</name>
+               <memberEnd xmi:idref="AgentIndicator-member-source"/>
+               <memberEnd xmi:idref="AgentIndicator-member-target"/>
+               <ownedEnd xmi:id="AgentIndicator-member-target" xmi:type="uml:Property">
+                 <association xmi:idref="AgentIndicator-member-association"/>
+                 <type xmi:idref="AgentIndicator"/>
+                 <lower><value>1</value></lowerValue>
+                 <upper><value>1</value></uppervalue>
+               </ownedEnd>
+             </packagedElement> */
+          break
+        default:
+          console.warn('need handler for ' + type)
       }
     }
   }
