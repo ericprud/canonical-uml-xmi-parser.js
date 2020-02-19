@@ -150,6 +150,7 @@ let CanonicalUmlXmiParser = function (opts = {}) {
     let associations = {}
     let assocSrcToClass = {}
     let modelRoot = document['xmi:XMI']['uml:Model'][0]
+    let byId = { }
 
     // return structure
     let model = Object.assign(new ModelRecord(), {
@@ -178,7 +179,7 @@ let CanonicalUmlXmiParser = function (opts = {}) {
         let a = associations[assocId]
         let c = classes[assocSrcToClass[a.from]]
         let aref = c.associations[a.from]
-        let name = aref.name || a.name // if a reference has no name used the association name
+        let name = aref.name || opts.useAssocationNameForReference ? a.name : null
         let prec = new PropertyRecord(model, aref.classId, aref.id, name, aref.type, undefined, aref.lower, aref.upper, aref.comments.concat(a.comments));
         if ('aggregation' in aref) {
           prec.aggregation = aref.aggregation;
@@ -230,20 +231,28 @@ let CanonicalUmlXmiParser = function (opts = {}) {
 
     return model
 
+    function eltToString (elt) {
+      return '<' + Object.keys(elt.$).reduce((acc, attr) => acc.concat(attr + '="' + elt.$[attr] + '"'), ['packagedElement']).join(' ') + '/>'
+    }
+
     function visitPackage (elt, parents) {
       let parent = parents[0]
       let type = elt.$['xmi:type']
-      if ('xmi:id' in elt.$) {
+      if (!('xmi:id' in elt.$)) {
+        throw Error('no id in ' + eltToString(elt))
+      }
+      {
         let id = elt.$['xmi:id']
+        if (id in byId) {
+          throw Error(`duplicate defintion of xml:id in ${eltToString(elt)}; previous: ${eltToString(byId[id])}`)
+        }
+        byId[id] = elt
         let name = parseName(elt)
         // Could keep id to elt map around with this:
         // index[id] = { element: elt, packages: parents }
 
         switch (type) {
           case 'uml:Class':
-            if (id in classes) {
-              throw Error('already seen class id ' + id)
-            }
             let ownedAttrs = parseProperties(
               model, elt.ownedAttribute || [], // SentinelConceptualDomain has no props
               id)
@@ -274,9 +283,6 @@ let CanonicalUmlXmiParser = function (opts = {}) {
             }
             break
           case 'uml:Enumeration':
-            if (id in enums) {
-              throw Error('already seen enum id ' + id)
-            }
             enums[id] = Object.assign(new EnumRecord(), {
               id: id,
               name: name,
@@ -294,9 +300,6 @@ let CanonicalUmlXmiParser = function (opts = {}) {
             break
           case 'uml:DataType':
           case 'uml:PrimitiveType':
-            if (id in datatypes) {
-              throw Error('already seen datatype id ' + id)
-            }
             datatypes[id] = Object.assign(new DatatypeRecord(), {
               name: name,
               id: id,
@@ -312,13 +315,6 @@ let CanonicalUmlXmiParser = function (opts = {}) {
           case 'uml:Model':
           case 'uml:Package':
           let recurse = true
-          /* obsolete special code for DDI EA view
-            if (id === 'ddi4_views') {
-              model.views = parseEAViews(document['xmi:XMI']['xmi:Extension'][0]['diagrams'][0]['diagram'])
-              recurse = false
-              break // elide EA views package in package hierarcy
-            }
-          */
             if (ViewPattern && id.match(ViewPattern)) {
               model.views = parseCanonicalViews(elt)
               recurse = false // elide canonical views package in package hierarcy
