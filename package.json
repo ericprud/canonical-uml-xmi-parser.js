@@ -1,6 +1,6 @@
 {
   "name": "canonical-uml-xmi-parser",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Canonical XMI parser for uml-model package",
   "main": "canonical-uml-xmi-parser.js",
   "scripts": {
@@ -14,7 +14,7 @@
   "author": "Eric Prud'hommeaux <eric.npm@w3.org> (http://www.w3.org/People/Eric/)",
   "license": "MIT",
   "dependencies": {
-    "uml-model": "^0.1.1",
+    "uml-model": "^0.1.2",
     "xml2js": "^0.4.23"
   },
   "devDependencies": {}

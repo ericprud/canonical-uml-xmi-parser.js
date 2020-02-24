@@ -4,7 +4,7 @@
 let CanonicalUmlXmiParser = function (opts = {}) {
 
   const returnParm1 = x => x
-  const NormalizeDatatype = opts.normalizeDatatype || returnParm1
+  const NormalizePrimitiveType = opts.normalizePrimitiveType || returnParm1
   const NormalizeAssociation = opts.normalizeAssociation || returnParm1
   const NormalizeProperty = opts.normalizeProperty || returnParm1
 
@@ -69,7 +69,7 @@ let CanonicalUmlXmiParser = function (opts = {}) {
 
       let newPropertyRec = new PropertyRecord(
         model, classId, id, name, elt.type[0].$['xmi:idref'],
-        NormalizeDatatype(elt.type[0].$['href'], id, classId),
+        NormalizePrimitiveType(elt.type[0].$['href'], id, classId),
         min, max,
         parseComments(elt))
       ret.properties.push(newPropertyRec)
@@ -140,11 +140,13 @@ let CanonicalUmlXmiParser = function (opts = {}) {
     // convenience variables
     let packages = {}
     let classes = {}
+    let datatypes = {}
     let properties = {}
     let enums = {}
-    let datatypes = {}
+    let primitiveTypes = {}
     let imports = {}
     let classHierarchy = makeHierarchy()
+    let datatypeHierarchy = makeHierarchy()
     let packageHierarchy = makeHierarchy()
 
     let associations = {}
@@ -159,11 +161,13 @@ let CanonicalUmlXmiParser = function (opts = {}) {
       source: source,
       packages: packages,
       classes: classes,
+      datatypes: datatypes,
       properties: properties,
       enums: enums,
-      datatypes: datatypes,
+      primitiveTypes: primitiveTypes,
       imports: imports,
       classHierarchy: classHierarchy,
+      datatypeHierarchy: datatypeHierarchy,
       packageHierarchy: packageHierarchy,
       associations: associations
     })
@@ -174,6 +178,8 @@ let CanonicalUmlXmiParser = function (opts = {}) {
     })
 
     // Turn associations into properties.
+    // !! this overrides the property name
+    // !! should be a utility function called electively by client and should be sensitive to pre-existing ownedAttributes referencing an association.
     Object.keys(associations).forEach(
       assocId => {
         let a = associations[assocId]
@@ -191,6 +197,7 @@ let CanonicalUmlXmiParser = function (opts = {}) {
       }
     )
 
+    /*
     Object.keys(classes).forEach(
       classId => {
         let classRecord = classes[classId]
@@ -202,16 +209,16 @@ let CanonicalUmlXmiParser = function (opts = {}) {
             properties[field.name].sources.push(field)
           })
       })
+    */
 
-
-    // Change relations to datatypes to be attributes.
+    // Change relations to primitiveTypes to be attributes.
     // Change relations to the classes and enums to reference the name.
 /*    Object.keys(properties).forEach(
       p => properties[p].sources.forEach(
         s => {
-          if (s.idref in datatypes) {
-            // console.log('changing property ' + p + ' to have attribute type ' + datatypes[s.idref].name)
-            // s.href = datatypes[s.idref].name
+          if (s.idref in primitiveTypes) {
+            // console.log('changing property ' + p + ' to have attribute type ' + primitiveTypes[s.idref].name)
+            // s.href = primitiveTypes[s.idref].name
             s.href = s.idref
             s.idref = undefined
           } else if (s.idref in classes) {
@@ -222,7 +229,7 @@ let CanonicalUmlXmiParser = function (opts = {}) {
         }))
 */
     /*
-     idref => idref in datatypes ? NodeConstraint : ShapeRef
+     idref => idref in primitiveTypes ? NodeConstraint : ShapeRef
      href => NodeConstraint
      type => NodeConstraint
      */
@@ -253,12 +260,17 @@ let CanonicalUmlXmiParser = function (opts = {}) {
 
       switch (type) {
         case 'uml:Class':
+        case 'uml:DataType':
+          const typeLabel = type === 'uml:Class' ? 'class' : 'datatype'
+          const myIdMap = type === 'uml:Class' ? classes : datatypes
+          const myHierarchy = type === 'uml:Class' ? classHierarchy : datatypeHierarchy
+          const constructor = type === 'uml:Class' ? ClassRecord : DatatypeRecord
           let ownedAttrs = parseProperties(
             model, elt.ownedAttribute || [], // SentinelConceptualDomain has no props
             id)
 
-          classes[id] = Object.assign(
-            new ClassRecord(id, name),
+          myIdMap[id] = Object.assign(
+            new constructor(id, name),
             ownedAttrs, {
               packages: parents,
               superClasses: [],
@@ -267,7 +279,7 @@ let CanonicalUmlXmiParser = function (opts = {}) {
               comments: parseComments(elt)
             }
           )
-          packages[parent].elements.push({type: 'class', id: id})
+          packages[parent].elements.push({type: typeLabel, id: id})
           Object.keys(ownedAttrs.associations).forEach(
             assocSourceId => { assocSrcToClass[assocSourceId] = id }
           )
@@ -275,10 +287,10 @@ let CanonicalUmlXmiParser = function (opts = {}) {
           // record class hierarchy (allows multiple inheritance)
           if ('generalization' in elt) {
             elt.generalization.forEach(
-              superClassElt => {
-                let superClassId = parseGeneral(superClassElt)
-                classHierarchy.add(superClassId, id)
-                classes[id].superClasses.push(superClassId)
+              parentElt => {
+                let superClassId = parseGeneral(parentElt)
+                myHierarchy.add(superClassId, id)
+                myIdMap[id].superClasses.push(superClassId)
               })
           }
           break
@@ -298,18 +310,17 @@ let CanonicalUmlXmiParser = function (opts = {}) {
             throw Error("need to handle inherited enumeration " + parseGeneral(elt.generalization[0]) + " " + name)
           }
           break
-        case 'uml:DataType':
         case 'uml:PrimitiveType':
-          datatypes[id] = Object.assign(new DatatypeRecord(), {
+          primitiveTypes[id] = Object.assign(new PrimitiveTypeRecord(), {
             name: name,
             id: id,
             packages: parents,
             referees: []
           })
-          packages[parent].elements.push({type: 'datatype', id: id})
+          packages[parent].elements.push({type: 'primitiveType', id: id})
           // record class hierarchy
           if ('generalization' in elt) {
-            throw Error("need to handle inherited datatype " + parseGeneral(elt.generalization[0]) + " " + name)
+            throw Error("need to handle inherited primitiveType " + parseGeneral(elt.generalization[0]) + " " + name)
           }
           break
         case 'uml:Model':
@@ -386,6 +397,11 @@ let CanonicalUmlXmiParser = function (opts = {}) {
     this.name = name
   }
 
+  function DatatypeRecord (id, name) {
+    this.id = id
+    this.name = name
+  }
+
   function PropertyRecord (model, classId, id, name, idref, href, lower, upper, comments) {
     if (model === undefined) {
       return // short-cut for objectify
@@ -416,7 +432,7 @@ let CanonicalUmlXmiParser = function (opts = {}) {
   function ModelRecord       () { }
   function PackageRecord     () { }
   function EnumRecord        () { }
-  function DatatypeRecord    () { }
+  function PrimitiveTypeRecord    () { }
   function ViewRecord        () { }
 
   /**
@@ -469,8 +485,9 @@ let CanonicalUmlXmiParser = function (opts = {}) {
         let t = s.href || s.idref
         let referent =
             t in model.classes ? model.classes[t] :
-            t in model.enums ? model.enums[t] :
             t in model.datatypes ? model.datatypes[t] :
+            t in model.enums ? model.enums[t] :
+            t in model.primitiveTypes ? model.primitiveTypes[t] :
             null
         if (referent) {
           referent.referees.push(new RefereeRecord(s.classId, propName))
@@ -490,9 +507,10 @@ let CanonicalUmlXmiParser = function (opts = {}) {
       source: Object.assign({}, source, { viewLabels }),
       packages: {},
       classes: {},
+      datatypes: {},
       properties: {},
       enums: {},
-      datatypes: {},
+      primitiveTypes: {},
       classHierarchy: makeHierarchy(),
       packageHierarchy: makeHierarchy(),
       views: model.views.filter(
@@ -503,10 +521,11 @@ let CanonicalUmlXmiParser = function (opts = {}) {
     // ret.enums = Object.keys(model.enums).forEach(
     //   enumId => copyEnum(ret, model, enumId)
     // )
-    // ret.datatypes = Object.keys(model.datatypes).forEach(
-    //   datatypeId => copyDatatype(ret, model, datatypeId)
+    // ret.primitiveTypes = Object.keys(model.primitiveTypes).forEach(
+    //   primitiveTypeId => copyPrimitiveType(ret, model, primitiveTypeId)
     // )
 
+    // !! extend to include datatypes
     let classIds = ret.views.reduce(
       (classIds, view) =>
         classIds.concat(view.members.reduce(
@@ -550,9 +569,9 @@ let CanonicalUmlXmiParser = function (opts = {}) {
       to.enums[enumId] = e
     }
 
-    function copyDatatype (to, from, datatypeId) {
-      let old = from.datatypes[datatypeId]
-      if (old.id in to.datatypes) {
+    function copyPrimitiveType (to, from, primitiveTypeId) {
+      let old = from.primitiveTypes[primitiveTypeId]
+      if (old.id in to.primitiveTypes) {
         return
       }
 
@@ -563,8 +582,8 @@ let CanonicalUmlXmiParser = function (opts = {}) {
         referees: []
       }
       addPackages(to, model, e.packages)
-      ret.packages[old.packages[0]].elements.push({ type: 'datatype', id: old.id })
-      to.datatypes[datatypeId] = e
+      ret.packages[old.packages[0]].elements.push({ type: 'primitiveType', id: old.id })
+      to.primitiveTypes[primitiveTypeId] = e
     }
 
     function addDependentClasses (classIds, followParents) {
@@ -594,8 +613,8 @@ let CanonicalUmlXmiParser = function (opts = {}) {
               if (id in model.enums) {
                 copyEnum(ret, model, id)
               }
-              if (id in model.datatypes) {
-                copyDatatype(ret, model, id)
+              if (id in model.primitiveTypes) {
+                copyPrimitiveType(ret, model, id)
               }
               if (followReferencedClasses && id in model.classes) {
                 dependentClassIds.push(id)
@@ -764,6 +783,14 @@ let CanonicalUmlXmiParser = function (opts = {}) {
         }, referees(modelStruct.classes[classId]))),
         {}
       ),
+      datatypes: Object.keys(modelStruct.datatypes).reduce(
+        (acc, datatypeId) => add(acc, datatypeId, Object.assign(new DatatypeRecord(), modelStruct.datatypes[datatypeId], {
+          properties: modelStruct.datatypes[datatypeId].properties.map(
+            prop => Object.assign(new PropertyRecord(), prop)
+          )
+        }, referees(modelStruct.datatypes[datatypeId]))),
+        {}
+      ),
       properties: Object.keys(modelStruct.properties).reduce(
         (acc, propertyName) => add(acc, propertyName, Object.assign({}, modelStruct.properties[propertyName], {
           sources: modelStruct.properties[propertyName].sources.map(
@@ -773,8 +800,9 @@ let CanonicalUmlXmiParser = function (opts = {}) {
         {}
       ),
       enums: simpleCopy(modelStruct.enums, EnumRecord),
-      datatypes: simpleCopy(modelStruct.datatypes, DatatypeRecord),
+      primitiveTypes: simpleCopy(modelStruct.primitiveTypes, PrimitiveTypeRecord),
       classHierarchy: Object.assign({}, modelStruct.classHierarchy),
+      datatypeHierarchy: Object.assign({}, modelStruct.datatypeHierarchy),
       packageHierarchy: Object.assign({}, modelStruct.packageHierarchy),
       associations: Object.keys(modelStruct.associations).reduce(
         (acc, associationId) => add(acc, associationId, Object.assign(new AssociationRecord(), modelStruct.associations[associationId])),
@@ -830,6 +858,7 @@ let CanonicalUmlXmiParser = function (opts = {}) {
       let enums = {}
       let classes = {}
       let datatypes = {}
+      let primitiveTypes = {}
       let associations = {}
       let imports = {}
       let missingElements = {}
@@ -854,10 +883,12 @@ let CanonicalUmlXmiParser = function (opts = {}) {
           return createPackage(xmiRef.id, reference)
         case 'enumeration':
           return createEnumeration(xmiRef.id, reference)
-        case 'datatype':
-          return createDatatype(xmiRef.id, reference)
+        case 'primitiveType':
+          return createPrimitiveType(xmiRef.id, reference)
         case 'class':
           return createClass(xmiRef.id, reference)
+        case 'datatype':
+          return createDatatype(xmiRef.id, reference)
         default:
           throw Error('mapElementByXmiReference: unknown reference type in ' + JSON.stringify(xmiRef))
         }
@@ -887,22 +918,25 @@ let CanonicalUmlXmiParser = function (opts = {}) {
         if (target in xmiGraph.enums) {
           return createEnumeration(target, reference)
         }
-        if (target in xmiGraph.datatypes) {
-          return createDatatype(target, reference)
+        if (target in xmiGraph.primitiveTypes) {
+          return createPrimitiveType(target, reference)
         }
         if (target in xmiGraph.classes) {
           return createClass(target, reference)
+        }
+        if (target in xmiGraph.datatypes) {
+          return createDatatype(target, reference)
         }
         return missingElements[target] = createMissingElement(target, reference)
       }
 
       function mapElementByIdref (propertyRecord, reference) {
         if (propertyRecord.href) {
-          if (propertyRecord.href in datatypes) {
-            datatypes[propertyRecord.href].references.push(reference)
-            return datatypes[propertyRecord.href]
+          if (propertyRecord.href in primitiveTypes) {
+            primitiveTypes[propertyRecord.href].references.push(reference)
+            return primitiveTypes[propertyRecord.href]
           }
-          return datatypes[propertyRecord.href] = new UmlModel.Datatype(propertyRecord.href, [reference], propertyRecord.href, true, null, [])
+          return primitiveTypes[propertyRecord.href] = new UmlModel.PrimitiveType(propertyRecord.href, [reference], propertyRecord.href, true, null, [])
         }
         return createdReferencedValueType(propertyRecord.idref, reference)
       }
@@ -928,22 +962,22 @@ let CanonicalUmlXmiParser = function (opts = {}) {
         return enums[enumerationId] = new UmlModel.Enumeration(enumerationId, [reference], enumerationRecord.name, enumerationRecord.values, reference, enumerationRecord.comments)
       }
 
-      function createDatatype (datatypeId, reference) {
-        if (datatypeId in datatypes) {
-          datatypes[datatypeId].references.push(reference)
-          return datatypes[datatypeId]
+      function createPrimitiveType (primitiveTypeId, reference) {
+        if (primitiveTypeId in primitiveTypes) {
+          primitiveTypes[primitiveTypeId].references.push(reference)
+          return primitiveTypes[primitiveTypeId]
         }
-        const datatypeRecord = xmiGraph.datatypes[datatypeId]
-        return datatypes[datatypeId] = new UmlModel.Datatype(datatypeId, [reference], datatypeRecord.name, false, reference, datatypeRecord.comments)
+        const primitiveTypeRecord = xmiGraph.primitiveTypes[primitiveTypeId]
+        return primitiveTypes[primitiveTypeId] = new UmlModel.PrimitiveType(primitiveTypeId, [reference], primitiveTypeRecord.name, false, reference, primitiveTypeRecord.comments)
       }
 
-      function createClass (classId, reference) {
-        if (classId in classes) {
-          classes[classId].references.push(reference)
-          return classes[classId]
+      function createClassifier (classId, reference, constructor, myIdMap, xmiGraphIdMap) {
+        if (classId in myIdMap) {
+          myIdMap[classId].references.push(reference)
+          return myIdMap[classId]
         }
-        const classRecord = xmiGraph.classes[classId]
-        let ret = classes[classId] = new UmlModel.Class(classId, [reference], classRecord.name, null, [], classRecord.isAbstract, reference, classRecord.comments)
+        const classRecord = xmiGraphIdMap[classId]
+        let ret = myIdMap[classId] = new constructor(classId, [reference], classRecord.name, null, [], classRecord.isAbstract, reference, classRecord.comments)
         // avoid cycles like Identifiable { basedOn Identifiable }
         if (classRecord.superClasses) {
           ret.generalizations = classRecord.superClasses.map(
@@ -955,6 +989,14 @@ let CanonicalUmlXmiParser = function (opts = {}) {
         return ret
       }
 
+      function createClass (classId, reference, constructor) {
+        return createClassifier(classId, reference, UmlModel.Class, classes, xmiGraph.classes);
+      }
+
+      function createDatatype (classId, reference, constructor) {
+        return createClassifier(classId, reference, UmlModel.Class, datatypes, xmiGraph.datatypes);
+      }
+
       function createMissingElement (missingElementId, reference) {
         if (missingElementId in missingElements) {
           missingElements[missingElementId].references.push(reference)
@@ -963,8 +1005,8 @@ let CanonicalUmlXmiParser = function (opts = {}) {
         return missingElements[missingElementId] = new UmlModel.MissingElement(missingElementId, [reference])
       }
 
-      function createProperty (propertyRecord, inClass) {
-        let ret = new UmlModel.Property(propertyRecord.id, inClass, propertyRecord.name,
+      function createProperty (propertyRecord, inClassifier) {
+        let ret = new UmlModel.Property(propertyRecord.id, inClassifier, propertyRecord.name,
                             null, // so we can pass the Property to unresolved types
                             propertyRecord.lower, propertyRecord.upper,
                             propertyRecord.association,
@@ -978,9 +1020,10 @@ let CanonicalUmlXmiParser = function (opts = {}) {
     ModelRecord: ModelRecord,
     PropertyRecord: PropertyRecord,
     ClassRecord: ClassRecord,
+    DatatypeRecord: DatatypeRecord,
     PackageRecord: PackageRecord,
     EnumRecord: EnumRecord,
-    DatatypeRecord: DatatypeRecord,
+    PrimitiveTypeRecord: PrimitiveTypeRecord,
     ViewRecord: ViewRecord,
     AssociationRecord: AssociationRecord,
     AssocRefRecord: AssocRefRecord,
